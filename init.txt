@@ -1,0 +1,386 @@
+
+/**
+ * Tous les TODO dans version
+ */
+/**
+ * TODO :
+ * - utiliser un tableau pur (POJO) sans adhérence excel ou autres et faire des fonctions de transfo
+ * - may be we can use just a tab name to sync data
+ * - Attention à l'utilisation de typescript qui est utilisé par Excel mais pas GSheet; 
+ *  ..... check right langage
+ * - En plus cela permettrai de pouvoir tester le code en dehors d'excel ou GSheet
+ */
+/**
+ * TODO :
+ * Prise en compte de la date d'update plutôt que la date du jour
+ */
+
+
+// Short date hour format
+const SDH_FORMAT = "ddd dd/mm hh:mm";
+
+interface TableSheet {
+  sheet: ExcelScript.Worksheet;
+  keyColName: string;  // Name of column containing unique key
+  colNames: string[];  // List of columns names
+  keyValues: string[]; // List of unique key value used as index
+};
+
+function construct(_sheet: ExcelScript.Worksheet, _key: string): TableSheet {
+
+  let lastColumn = _sheet.getUsedRange()?.getColumnCount() || 0;
+
+  if (lastColumn === 0) {
+    throw Error("The sheet is empty or contains no data.");
+  }
+
+  // Get the range for the first row dynamically
+  let firstRowRange = _sheet.getRangeByIndexes(0, 0, 1, lastColumn); // Row 0, all columns
+  let cols = firstRowRange.getValues()[0].map((cell) => cell?.toString() || "");
+
+  if (cols.indexOf(_key) < 0) {
+    throw Error(`The sheet does not contain the key "${_key}".`);
+  }
+  
+  console.log("construct : " + cols);
+  console.log("construct : " + cols.indexOf(_key) + "/" + _sheet.getUsedRange(true).getRowCount());
+
+  let nbRow = _sheet.getUsedRange(true).getRowCount();
+
+  // We cannot have a range empty (0 row); to avoid bug I force nbRow to 2
+  // I don't know why but it's working
+  if (nbRow == 1) nbRow = 2;
+
+  let rk = _sheet.getRangeByIndexes(1, cols.indexOf(_key), nbRow - 1, 1);
+  
+  let v = rk.getColumn(0).getValues();
+  let kv = v.map((cell) => cell?.toString() || "");
+  return { sheet: _sheet, keyColName: _key, colNames: cols, keyValues: kv };
+}
+
+
+
+function logTableSheet(ts: TableSheet) {
+  console.log(ts.sheet.getName());
+  console.log(ts.colNames);
+  console.log(`UK = ${ts.keyColName}`);
+  console.log(ts.keyValues);
+}
+
+
+
+/**
+ * Return index of a column as letters ("A" in "A1 notation")
+ */
+function getColumnIdx(ts: TableSheet, colName: string = null): string {
+  if (colName == null) { colName = ts.keyColName };
+  let index = ts.colNames.indexOf(colName);
+  let columnName = "";
+  while (index >= 0) {
+    columnName = String.fromCharCode((index % 26) + 65) + columnName;
+    index = Math.floor(index / 26) - 1;
+  }
+  return columnName;
+}
+
+function getColumnValues(ts: TableSheet, colName: string = ""): string[] {
+  if (colName == "") {
+    colName = ts.keyColName;
+  }
+
+  let colIdx = getColumnIdx(ts, colName);
+
+  let r = ts.sheet.getRangeByIndexes(1, 0, ts.sheet.getUsedRange().getRowCount() - 1, ts.colNames.length);
+  let values = r.getColumn(ts.colNames.indexOf(colName)).getValues();
+  let ret = values.map((cell) => cell?.toString() || "");
+  return ret;
+}
+
+function findRowIdxByKey(ts: TableSheet, key: string): number {
+  // A1 : start at 1 + offset for header ==> +2
+  return ts.keyValues.indexOf(key) + 2;
+}
+
+function setValue(ts: TableSheet, k: string, variable: string, value: number) {
+  let rowIndex = findRowIdxByKey(ts, k);
+  let colIndex = getColumnIdx(ts, variable);
+  ts.sheet.getRange(`${colIndex}${rowIndex}`).setValue(value);
+}
+
+function setColumnValues(ts: TableSheet, column: string, variables: (string | number | boolean)[], startRow: number, format: string) {
+  let colIdx = getColumnIdx(ts, column);
+  const variables2D = variables.map(variables => [variables]);
+
+  // let r: ExcelScript.Range =
+  //   ts.sheet.getRange(`${colIdx}${startRow}:${colIdx}${startRow + variables.length - 1}`);
+
+  // r.setValues(variables2D);
+
+
+  variables.forEach((v) => {
+    let cell = ts.sheet.getRange(`${colIdx}${startRow}:${colIdx}${startRow}`);
+    cell.setValue(v);
+
+    if (format == "url") {
+
+      const hyperlink: ExcelScript.RangeHyperlink = {
+        address: `https://apec.atlassian.net/browse/${v}`,  // The URL
+        textToDisplay: v?.toString()              // The text to display
+      };
+      cell.setHyperlink(hyperlink);
+    }
+
+    if (format == "date") {
+      cell.setNumberFormat(SDH_FORMAT);
+    }
+
+    startRow++;
+
+  })
+
+
+}
+
+function getRowValues(ts: TableSheet, key: string, colNames: string[]): (string | number | boolean)[] {
+  let ret: (string | number | boolean)[] = [];
+
+  let rowIdx = findRowIdxByKey(ts, key);
+
+  let v = ts.sheet.getRangeByIndexes(rowIdx - 1, 0, 1, ts.colNames.length).getValues()[0];
+  let cn = "Story point estimate";
+
+  colNames.forEach((k) => ret.push(v[ts.colNames.indexOf(k)]));
+  //     console.log("grv: " + k + " : " + ts.colNames.indexOf(k) + " = " + v[ts.colNames.indexOf(k)]);
+  return ret;
+}
+
+/**
+ * For row with "key" => {colNames[n] = colValues[n]}
+ */
+function setRowValues(ts: TableSheet, key: string, colNames: string[], colValues: (string | number | boolean)[]) {
+
+  let rowIdx = findRowIdxByKey(ts, key);
+
+  // console.log("srv: " + ts.sheet.getName());
+  // console.log("srv: " + key + " at " + rowIdx);
+  // console.log("srv: " + colNames + " < " + colValues);
+
+  // Get whole line
+  let v = ts.sheet.getRangeByIndexes(rowIdx - 1, 0, 1, ts.colNames.length).getValues();
+
+  // Update cell in line
+  colNames.map((k) => v[0][ts.colNames.indexOf(k)] = colValues.shift());
+
+  // Set whole line
+  ts.sheet.getRangeByIndexes(rowIdx - 1, 0, 1, ts.colNames.length).setValues(v);
+
+}
+
+function dateToExcelDate(date: Date = null): number {
+  if (date == null) date = new Date();
+  const excelEpoch = new Date(Date.UTC(1899, 11, 30)); // Excel's epoch (December 30, 1899)
+  const msPerDay = 24 * 60 * 60 * 1000; // Number of milliseconds in a day
+
+  // Calculate the number of days between the given date and the Excel epoch
+  const daysSinceExcelEpoch = Math.floor((date.getTime() - excelEpoch.getTime()) / msPerDay);
+
+  // Add the fractional part for the time of day
+  const fractionalDay = (date.getHours() / 24) + (date.getMinutes() / 1440) + (date.getSeconds() / 86400);
+
+  return daysSinceExcelEpoch + fractionalDay;
+}
+
+
+// Excel functions  _____________________________________________
+
+function timetrack(ticketsTable: TableSheet, trackTable: TableSheet, trackedState: string) {
+  let stateStart = getColumnValues(trackTable, trackedState);
+  if (stateStart.length > 0) {
+
+    let startColIdx = getColumnIdx(trackTable, trackedState);
+    let stopColIdx = calcNextColumnName(startColIdx);
+
+    let states = getColumnValues(ticketsTable, "État");
+    let keys = getColumnValues(ticketsTable);
+
+    for (let i = 0; i < states.length; i++) {
+      let stateValue = states[i];
+      let keyValue = keys[i];
+
+      //console.log(`compare ${keyValue} > "${cellValue}" [ligne : ${i}]  / "${stateName}"`);
+      // Vérifier si la valeur correspond à la valeur de référence
+      if (stateValue === trackedState) {
+
+        let rowIndex = findRowIdxByKey(trackTable, keyValue);
+
+        console.log(`tt: ${startColIdx}${rowIndex}`);
+        //console.log(`${startColIdx}${rowIndex} = ${targetCell.getValue()}`);
+        let updateDate: (string | number | boolean)[] = getRowValues(ticketsTable, keyValue, ["Mise à jour"]);
+
+        let startCell = trackTable.sheet.getRange(`${startColIdx}${rowIndex}`);
+        if (startCell.getValue() === "") {
+          //console.log("compare " + stateValue + " / " + rowIndex);
+          // startCell.setValue(dateToExcelDate());
+          startCell.setValue(updateDate[0]);
+          startCell.setNumberFormat(SDH_FORMAT);
+        }
+
+        let stopCell = trackTable.sheet.getRange(`${stopColIdx}${rowIndex}`);
+        //stopCell.setValue(dateToExcelDate());
+        stopCell.setValue(updateDate[0]);
+        stopCell.setNumberFormat(SDH_FORMAT);
+      }
+    }
+  } else {
+    console.log("no time to track for " + trackedState);
+  }
+}
+
+// upsertScope(sheetSource, sheetDest, ["Clé", "Mise à jour"],["Added","Disapeared"]);
+function upsertScope_new(ticketsTable: TableSheet, scopeTable: TableSheet, keys: string[]) {
+
+  let ticketKeys = ticketsTable.keyValues;
+
+  let scopeKeys = new Set(scopeTable.keyValues);
+
+  // Initialiser array for new scope keys
+  let newScopeKeys: string[] = [];
+  let newScopeKeyTimestamps: (string | number | boolean) [] = [];
+
+  // Build table of newKey
+  for (let i = 0; i < ticketKeys.length; i++) {
+    let value = ticketKeys[i];
+    if (value && !scopeKeys.has(value)) {
+      newScopeKeys.push(value);
+      let updateDate: (string | number | boolean)[] = getRowValues(ticketsTable, value, ["Mise à jour"]);
+      newScopeKeyTimestamps.push(updateDate[0]); // Ajouter l'heure et la date actuelles
+      scopeKeys.add(value); // Ajouter au Set pour éviter les doublons futurs
+    }
+  }
+
+  // Add new entries to scope
+  if (newScopeKeys.length > 0) {
+    let lastRow = scopeTable.sheet.getUsedRange()?.getRowCount() || 1; // Inclure A1 si vide
+    let targetRow = Math.max(lastRow, 1) + 1; // S'assurer de commencer à partir de A2
+
+    setColumnValues(scopeTable, "Clé", newScopeKeys, targetRow,"url");
+
+    setColumnValues(scopeTable, "Added", newScopeKeyTimestamps, targetRow,"date");
+  }
+
+  reconstructTableSheetCache(scopeTable);
+
+  //console.log("update");
+
+  scopeTable.keyValues.forEach((k) => {
+    console.log(k + " > ligne : " + ticketKeys.indexOf(k));
+    if ((ticketKeys.indexOf(k)) < 0) {
+      console.log("Disapeared");
+      setValue(scopeTable, k, "Disapeared", dateToExcelDate());
+    } else {
+      const colNames = ["Story point estimate", "Type de ticket", "Personne assignée", "État"];
+      //console.log("get values");
+      let v = getRowValues(ticketsTable, k, colNames);
+      //console.log("getRowValues = " + v);
+      setRowValues(scopeTable, k, colNames, v);
+    }
+    //console.log("fin");
+  });
+
+
+  function reconstructTableSheetCache(ts: TableSheet) {
+
+    let lastColumn = ts.sheet.getUsedRange()?.getColumnCount() || 0;
+
+    // Get the range for the first row dynamically
+    let firstRowRange = ts.sheet.getRangeByIndexes(0, 0, 1, lastColumn); // Row 0, all columns
+    let cols = firstRowRange.getValues()[0].map((cell) => cell?.toString() || "");
+
+    let rk = ts.sheet.getRangeByIndexes(1, cols.indexOf(ts.keyColName), ts.sheet.getUsedRange(true).getRowCount() - 1, 1);
+    let v = rk.getColumn(0).getValues();
+    let kv = v.map((cell) => cell?.toString() || "");
+
+    ts.colNames = cols;
+    ts.keyValues = kv;
+
+  }
+
+
+}
+
+
+
+function calcNextColumnName(columnName: string): string {
+  let result = "";
+  let carry = 1; // Start with a carry for incrementing
+
+  if (columnName == "") return result;
+
+  // Process the column name from right to left
+  for (let i = columnName.length - 1; i >= 0; i--) {
+    let charCode = columnName.charCodeAt(i) - 65; // Convert 'A' to 0, 'B' to 1, etc.
+
+    // Add carry
+    charCode += carry;
+
+    // If charCode exceeds 25 ('Z'), wrap around and set carry
+    if (charCode > 25) {
+      charCode = 0; // Wrap to 'A'
+      carry = 1;    // Carry to the next column
+    } else {
+      carry = 0;    // No carry needed
+    }
+
+    // Prepend the character to the result
+    result = String.fromCharCode(charCode + 65) + result;
+  }
+
+  // If there's still a carry left, prepend 'A'
+  if (carry > 0) {
+    result = "A" + result;
+  }
+
+  return result;
+}
+
+
+
+function main(workbook: ExcelScript.Workbook) {
+  // Obtenir les feuilles "Onglet1" et "Onglet2"
+  let sheet1 = workbook.getWorksheet("JIRA");
+  let sheet2 = workbook.getWorksheet("Scope");
+
+  let tracking = construct(sheet2, "Clé");
+  let tickets = construct(sheet1, "Clé");
+  //console.log(getColumnValues(tickets, "Clé"));
+
+  // Synchroniser scope en cours depuis onglet "tickets" ___________________________________
+  //upsertScope(sheetSource, sheetDest, ["Clé", "Mise à jour"],["Added","Disapeared"]);
+  upsertScope_new(tickets, tracking, ["Clé"]);
+
+  // Update status date from tickets _______________________________________________________
+  timetrack(tickets, tracking, "En Rédaction");
+  timetrack(tickets, tracking, "Ouvert");
+  timetrack(tickets, tracking, "En attente");
+  timetrack(tickets, tracking, "En analyse");
+  timetrack(tickets, tracking, "En analyse technique");
+  timetrack(tickets, tracking, "Co-Conception");
+  timetrack(tickets, tracking, "A Réaliser");
+  timetrack(tickets, tracking, "Non validée");
+  timetrack(tickets, tracking, "A traiter");
+  timetrack(tickets, tracking, "Réalisation");
+  timetrack(tickets, tracking, "En cours");
+  timetrack(tickets, tracking, "Revue Réalisation");
+  timetrack(tickets, tracking, "Traitée");
+  timetrack(tickets, tracking, "A valider");
+  timetrack(tickets, tracking, "En cours de validation");
+  timetrack(tickets, tracking, "Validée");
+  timetrack(tickets, tracking, "Fermée");
+  timetrack(tickets, tracking, "Annulée");
+
+
+  // Afficher un message pour indiquer que le script a terminé
+  console.log("done");
+
+}
+

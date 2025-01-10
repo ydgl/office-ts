@@ -1,0 +1,32 @@
+{
+  "name": "office-ts",
+  "version": "1.0.0",
+  "description": "macro for office",
+  "main": "dist/main.js",
+  "type": "module",
+  "scripts": {
+    "test": "test",
+    "start": "ts-node src/main.ts"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ydgl/office-ts.git"
+  },
+  "keywords": [
+    "office",
+    "macro"
+  ],
+  "author": "ydgl",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/ydgl/office-ts/issues"
+  },
+  "homepage": "https://github.com/ydgl/office-ts#readme",
+  "dependencies": {
+    "@types/node": "^22.10.5"
+  },
+  "devDependencies": {
+    "ts-node": "^10.9.2",
+    "typescript": "^5.7.3"
+  }
+}
