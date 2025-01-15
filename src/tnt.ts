@@ -1,10 +1,10 @@
-// BEGIN LIBRARY _____________________________________________________________
+
 type ColumnType = string | number;
 
 /**
  * Convert linux conventional date (1 = 1ms) to worksheet days date (1 = 1 day)
  */
-export function dateToDay(date?: Date ): number {
+export function dateToDay(date?: Date): number {
     if (date == null) date = new Date();
     const excelEpoch = new Date(Date.UTC(1899, 11, 30)); // Excel's epoch (December 30, 1899)
     const msPerDay = 24 * 60 * 60 * 1000; // Number of milliseconds in a day
@@ -28,9 +28,9 @@ export class Tnt {
     private keyIndex: number = -1;
 
     /**
- * @param columnNames names of columns
- * @param keyColName key column name, may by a uk or not
- */
+     * @param columnNames names of columns
+     * @param keyColName key column name, may by a uk or not
+     */
     constructor(columnNames: string[], keyColName: string) {
         this.colNames = columnNames;
         this.keyColName = keyColName;
@@ -42,14 +42,31 @@ export class Tnt {
         this.rows.push(newRow);
     }
 
-    filterRows_old(keyValue: string): Tnt {
-
-        const filteredData = this.rows.filter(record => record[this.keyIndex] === keyValue);
-        const newTnt = new Tnt(this.colNames, this.keyColName);
-        newTnt.setWorkSheetData([this.colNames, ...filteredData]);
-        return newTnt;
-
+    addValue(keyValue: string, colName: string, value: ColumnType, errorColName:string): void {
+        const row = this.findRowByKey(keyValue);
+        if (row) {
+            const colIndex = this.colNames.indexOf(colName);
+            const errorColIndex = this.colNames.indexOf(errorColName);
+            if (colIndex !== -1) {
+                if (typeof row[colIndex] === 'number' && typeof value === 'number') 
+                    (row[colIndex] as number) += (value as number);
+                else {
+                  if (typeof row[colIndex] === 'string')
+                    (row[colIndex] as string) += value.toString;
+                            else {
+                        console.log(`Cannot add ${value} (a string) to column ${colName} which is a number.`);
+                    }
+                }
+            } else {
+                console.log(`Column ${colName} does not exist, ${value} not set.`);
+                if (typeof value === 'number')
+                    (row[errorColIndex] as number) += value;
+            }
+        } else {
+            console.log(`Row with key ${keyValue} does not exist, ${value} not set.`);
+        }
     }
+
 
     /**
      * 
@@ -75,10 +92,6 @@ export class Tnt {
     }
 
 
-    forEachRow(callback: (record: ColumnType[], index: number) => void): void {
-        this.rows.forEach(callback);
-    }
-
     forEachRowPair(callback: (record0: ColumnType[], record1: ColumnType[] | null) => void): void {
         for (let i = 0; i < this.rows.length; i++) {
             if (i + 1 < this.rows.length)
@@ -86,15 +99,6 @@ export class Tnt {
             else
                 callback(this.rows[i], null);
         }
-    }
-
-
-
-
-    private getExcelDate(date: Date): number {
-        const startDate = new Date(Date.UTC(1899, 11, 30)); // Excel's epoch date
-        const diff = date.getTime() - startDate.getTime();
-        return diff / (1000 * 60 * 60 * 24);
     }
 
 
@@ -148,6 +152,10 @@ export class Tnt {
         return letter;
     }
 
+    getRowCount() : number {
+        return this.rows.length
+    }
+
     log(): void {
         console.log(this.colNames);
         console.log(this.rows);
@@ -183,6 +191,22 @@ export class Tnt {
         }
     }
 
+    setValues(keyValue: string, columns: string[], values: ColumnType[]): void {
+        const row = this.findRowByKey(keyValue);
+        if (row) {
+            columns.forEach((colName, index) => {
+                const colIndex = this.colNames.indexOf(colName);
+                if (colIndex !== -1) {
+                    row[colIndex] = values[index];
+                } else {
+                    console.log(`Column ${colName} does not exist, ${values[index]} not set.`);
+                }
+            });
+        } else {
+            console.log(`Row with key ${keyValue} does not exist, values not set.`);
+        }
+    }
+
     setWorkSheetData(worksheetData: (string | number | boolean)[][]): void {
         this.colNames = worksheetData[0].map((colName) => colName.toString());
         this.keyIndex = this.colNames.indexOf(this.keyColName);
@@ -201,15 +225,11 @@ export class Tnt {
     }
 
 
-    trackStatusDurationFromStatusTransactions(transactions: Tnt,
-        computeStatusDuration: (workerProfile: string, status: string, from: Date, to: Date) => number): void {
-    }
-
     upsertRowsWithColumns(src: Tnt, columnsToUpdate: string[], upsertAddDateColumn: string, upsertMissingDateColumn: string): void {
         const colIndexes = columnsToUpdate.map(col => this.colNames.indexOf(col));
         const addDateIndex = this.colNames.indexOf(upsertAddDateColumn);
         const missingDateIndex = this.colNames.indexOf(upsertMissingDateColumn);
-        const now = this.getExcelDate(new Date());
+        const now = dateToDay();
 
         // Track existing keys to identify missing records
         const existingKeys = new Set(this.rows.map(record => record[this.keyIndex]));
@@ -249,7 +269,3 @@ export class Tnt {
 
 
 }
-
-
-// END LIBRARY _______________________________________________________________
-
