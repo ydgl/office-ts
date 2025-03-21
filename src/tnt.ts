@@ -2,10 +2,30 @@
 type ColumnType = string | number;
 
 /**
- * Convert linux conventional date (1 = 1ms) to worksheet days date (1 = 1 day)
+ * Convertion functions between linux conventional date (1 = 1ms) and worksheet days date (1 = 1 day) 
+ * Javascript Date are stored as UTC timestamp and displayed in local timezone
+ * Excel Date are stored in local days (0 = 30/12/1899 00:00 local) and display in local timezone
+ * To enforce this behavior, we name JS Date "UTC Date" and Excel Date "Local Days"
  */
-export function dateToDay(date?: Date): number {
-    if (date == null) date = new Date();
+export function localDaysToUTCDate(days: number): Date {
+    // Date de référence : 30 décembre 1899 00:00:00 
+    const referenceDate = new Date(Date.UTC(1899, 11, 30));
+
+    // Calculer le nombre de millisecondes correspondant aux jours donnés
+    const millisecondsInDay = 24 * 60 * 60 * 1000; // Nombre de millisecondes dans une journée
+    const localDateInMilliseconds = referenceDate.getTime() + (days * millisecondsInDay);
+    
+    // Créer une nouvelle date à partir du nombre de millisecondes
+    const resultDate = new Date(localDateInMilliseconds);
+
+    // Ajuster pour la timezone locale
+    const timezoneOffset = resultDate.getTimezoneOffset() * 60 * 1000; // Décalage en millisecondes
+    const localDate = new Date(resultDate.getTime() + timezoneOffset);
+
+    return localDate;
+}
+
+export function utcDateToLocalDays(date: Date): number {
     const excelEpoch = new Date(Date.UTC(1899, 11, 30)); // Excel's epoch (December 30, 1899)
     const msPerDay = 24 * 60 * 60 * 1000; // Number of milliseconds in a day
 
@@ -17,6 +37,24 @@ export function dateToDay(date?: Date): number {
 
     return daysSinceExcelEpoch + fractionalDay;
 }
+
+export function localDaysToLocalHoursString(days : number) : string {
+    // Local days to local hours
+    let dayFractionSeconds = (days - Math.floor(days)) * 24 * 60 * 60;
+    let hours = Math.floor(dayFractionSeconds / (60 * 60));
+    let minutes = Math.floor((dayFractionSeconds / 60) % 60);
+    let seconds = Math.floor(dayFractionSeconds % 60);
+
+    return `${hours}:${minutes}:${seconds}`;
+}
+
+
+export function roundDaysToMinute(days : number) : number {
+    let r = Math.round(days * 1440) / 1440; 
+    return r;
+}
+
+
 
 // Typed & Named Table
 export class Tnt {
@@ -42,18 +80,18 @@ export class Tnt {
         this.rows.push(newRow);
     }
 
-    addValue(keyValue: string, colName: string, value: ColumnType, errorColName:string): void {
+    addValue(keyValue: string, colName: string, value: ColumnType, errorColName: string): void {
         const row = this.findRowByKey(keyValue);
         if (row) {
             const colIndex = this.colNames.indexOf(colName);
             const errorColIndex = this.colNames.indexOf(errorColName);
             if (colIndex !== -1) {
-                if (typeof row[colIndex] === 'number' && typeof value === 'number') 
+                if (typeof row[colIndex] === 'number' && typeof value === 'number')
                     (row[colIndex] as number) += (value as number);
                 else {
-                  if (typeof row[colIndex] === 'string')
-                    (row[colIndex] as string) += value.toString;
-                            else {
+                    if (typeof row[colIndex] === 'string')
+                        (row[colIndex] as string) += value.toString;
+                    else {
                         console.log(`Cannot add ${value} (a string) to column ${colName} which is a number.`);
                     }
                 }
@@ -67,6 +105,31 @@ export class Tnt {
         }
     }
 
+    diffValueOnKey(keyValue: string, otherTnt: Tnt, colNamesToDiff: string[]): boolean {
+        let isDifferent = false;
+        const row = this.findRowByKey(keyValue);
+        const otherRow = otherTnt.findRowByKey(keyValue);
+        if (row && otherRow) {
+            for (const colName of colNamesToDiff) {
+                const colIndex = this.colNames.indexOf(colName);
+                const otherColIndex = otherTnt.colNames.indexOf(colName);
+                if (colIndex !== -1 && otherColIndex !== -1) {
+                    if (row[colIndex] !== otherRow[otherColIndex]) {
+                        console.log(`diffValueOnKey on column ${colName} ${row[colIndex]} !== ${otherRow[otherColIndex]}`);
+                        isDifferent = true;
+                    }
+                } else {
+                    console.log(`diffValueOnKey Column ${colName} does not exist.`);
+                    isDifferent = true;
+                }
+            }
+        } else {
+            console.log(`diffValueOnKey Row with key ${keyValue} does not exist.`);
+            isDifferent = true;
+        }
+
+        return isDifferent;
+    }
 
     /**
      * 
@@ -152,7 +215,7 @@ export class Tnt {
         return letter;
     }
 
-    getRowCount() : number {
+    getRowCount(): number {
         return this.rows.length
     }
 
@@ -229,7 +292,7 @@ export class Tnt {
         const colIndexes = columnsToUpdate.map(col => this.colNames.indexOf(col));
         const addDateIndex = this.colNames.indexOf(upsertAddDateColumn);
         const missingDateIndex = this.colNames.indexOf(upsertMissingDateColumn);
-        const now = dateToDay();
+        const todayDays = utcDateToLocalDays(new Date(Date.now()));   
 
         // Track existing keys to identify missing records
         const existingKeys = new Set(this.rows.map(record => record[this.keyIndex]));
@@ -250,7 +313,7 @@ export class Tnt {
                     newRecord[colIndex] = record[src.colNames.indexOf(columnsToUpdate[i])];
                 });
                 if (addDateIndex !== -1) {
-                    newRecord[addDateIndex] = now;
+                    newRecord[addDateIndex] = todayDays;
                 }
                 this.addRow(newRecord);
             }
@@ -260,7 +323,7 @@ export class Tnt {
         existingKeys.forEach(key => {
             const existingRecord = this.findRowByKey(key);
             if (existingRecord && missingDateIndex !== -1) {
-                existingRecord[missingDateIndex] = now;
+                existingRecord[missingDateIndex] = todayDays;
             }
         });
     }

@@ -1,5 +1,5 @@
-import { dateToDay, Tnt } from './tnt.js';
+import { utcDateToLocalDays, Tnt } from './tnt.js';
 
 
-console.log(dateToDay());
+console.log(utcDateToLocalDays(new Date(Date.now())));
 
