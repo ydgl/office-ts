@@ -1,6 +1,11 @@
 
 type ColumnType = string | number;
 
+// In office TS "any" is not allowed
+function logTntLib(msg: string): void {
+    console.log(msg);
+}
+
 /**
  * Convertion functions between linux conventional date (1 = 1ms) and worksheet days date (1 = 1 day) 
  * Javascript Date are stored as UTC timestamp and displayed in local timezone
@@ -14,7 +19,7 @@ export function localDaysToUTCDate(days: number): Date {
     // Calculer le nombre de millisecondes correspondant aux jours donnés
     const millisecondsInDay = 24 * 60 * 60 * 1000; // Nombre de millisecondes dans une journée
     const localDateInMilliseconds = referenceDate.getTime() + (days * millisecondsInDay);
-    
+
     // Créer une nouvelle date à partir du nombre de millisecondes
     const resultDate = new Date(localDateInMilliseconds);
 
@@ -38,7 +43,7 @@ export function utcDateToLocalDays(date: Date): number {
     return daysSinceExcelEpoch + fractionalDay;
 }
 
-export function localDaysToLocalHoursString(days : number) : string {
+export function localDaysToLocalHoursString(days: number): string {
     // Local days to local hours
     let dayFractionSeconds = (days - Math.floor(days)) * 24 * 60 * 60;
     let hours = Math.floor(dayFractionSeconds / (60 * 60));
@@ -49,8 +54,8 @@ export function localDaysToLocalHoursString(days : number) : string {
 }
 
 
-export function roundDaysToMinute(days : number) : number {
-    let r = Math.round(days * 1440) / 1440; 
+export function roundDaysToMinute(days: number): number {
+    let r = Math.round(days * 1440) / 1440;
     return r;
 }
 
@@ -92,16 +97,16 @@ export class Tnt {
                     if (typeof row[colIndex] === 'string')
                         (row[colIndex] as string) += value.toString;
                     else {
-                        console.log(`Cannot add ${value} (a string) to column ${colName} which is a number.`);
+                        logTntLib(`Cannot add ${value} (a string) to column ${colName} which is a number.`);
                     }
                 }
             } else {
-                console.log(`Column ${colName} does not exist, ${value} not set.`);
+                logTntLib(`Column ${colName} does not exist, ${value} not set.`);
                 if (typeof value === 'number')
                     (row[errorColIndex] as number) += value;
             }
         } else {
-            console.log(`Row with key ${keyValue} does not exist, ${value} not set.`);
+            logTntLib(`Row with key ${keyValue} does not exist, ${value} not set.`);
         }
     }
 
@@ -115,16 +120,16 @@ export class Tnt {
                 const otherColIndex = otherTnt.colNames.indexOf(colName);
                 if (colIndex !== -1 && otherColIndex !== -1) {
                     if (row[colIndex] !== otherRow[otherColIndex]) {
-                        console.log(`diffValueOnKey on column ${colName} ${row[colIndex]} !== ${otherRow[otherColIndex]}`);
+                        logTntLib(`diffValueOnKey on column ${colName} ${row[colIndex]} !== ${otherRow[otherColIndex]}`);
                         isDifferent = true;
                     }
                 } else {
-                    console.log(`diffValueOnKey Column ${colName} does not exist.`);
+                    logTntLib(`diffValueOnKey Column ${colName} does not exist.`);
                     isDifferent = true;
                 }
             }
         } else {
-            console.log(`diffValueOnKey Row with key ${keyValue} does not exist.`);
+            logTntLib(`diffValueOnKey Row with key ${keyValue} does not exist.`);
             isDifferent = true;
         }
 
@@ -247,10 +252,10 @@ export class Tnt {
             if (colIndex !== -1) {
                 row[colIndex] = value;
             } else {
-                console.log(`Column ${colName} does not exist, ${value} not set.`);
+                logTntLib(`Column ${colName} does not exist, ${value} not set.`);
             }
         } else {
-            console.log(`Row with key ${keyValue} does not exist, ${value} not set.`);
+            logTntLib(`Row with key ${keyValue} does not exist, ${value} not set.`);
         }
     }
 
@@ -262,11 +267,11 @@ export class Tnt {
                 if (colIndex !== -1) {
                     row[colIndex] = values[index];
                 } else {
-                    console.log(`Column ${colName} does not exist, ${values[index]} not set.`);
+                    logTntLib(`Column ${colName} does not exist, ${values[index]} not set.`);
                 }
             });
         } else {
-            console.log(`Row with key ${keyValue} does not exist, values not set.`);
+            logTntLib(`Row with key ${keyValue} does not exist, values not set.`);
         }
     }
 
@@ -287,12 +292,18 @@ export class Tnt {
         this.rows = dataTmp;
     }
 
-
+    /**
+     * Upsert rows from src into this table.
+     * @param src 
+     * @param columnsToUpdate columns to update always with src value (if not null or empty)
+     * @param upsertAddDateColumn column indicaying the date of insertion
+     * @param upsertMissingDateColumn column indicating last time src does not contain info about this row
+     */
     upsertRowsWithColumns(src: Tnt, columnsToUpdate: string[], upsertAddDateColumn: string, upsertMissingDateColumn: string): void {
-        const colIndexes = columnsToUpdate.map(col => this.colNames.indexOf(col));
+        const colIndexesAlways = columnsToUpdate.map(col => this.colNames.indexOf(col));
         const addDateIndex = this.colNames.indexOf(upsertAddDateColumn);
         const missingDateIndex = this.colNames.indexOf(upsertMissingDateColumn);
-        const todayDays = utcDateToLocalDays(new Date(Date.now()));   
+        const todayDays = utcDateToLocalDays(new Date(Date.now()));
 
         // Track existing keys to identify missing records
         const existingKeys = new Set(this.rows.map(record => record[this.keyIndex]));
@@ -301,17 +312,22 @@ export class Tnt {
             const key = record[src.keyIndex];
             const existingRecord = this.findRowByKey(key);
             if (existingRecord) {
-                colIndexes.forEach((colIndex, i) => {
-                    existingRecord[colIndex] = record[src.colNames.indexOf(columnsToUpdate[i])];
+                colIndexesAlways.forEach((colIndex, i) => {
+                    const valueToUpdate = record[src.colNames.indexOf(columnsToUpdate[i])];
+                    if ((typeof valueToUpdate === 'string' && valueToUpdate !== "") ||
+                        (typeof valueToUpdate === 'number' && !isNaN(valueToUpdate))) 
+                        existingRecord[colIndex] = valueToUpdate;
                 });
+
 
                 existingKeys.delete(key);
             } else {
                 const newRecord: ColumnType[] = new Array(this.colNames.length).fill(null) as ColumnType[];
                 newRecord[this.keyIndex] = key;
-                colIndexes.forEach((colIndex, i) => {
+                colIndexesAlways.forEach((colIndex, i) => {
                     newRecord[colIndex] = record[src.colNames.indexOf(columnsToUpdate[i])];
                 });
+
                 if (addDateIndex !== -1) {
                     newRecord[addDateIndex] = todayDays;
                 }
@@ -319,16 +335,6 @@ export class Tnt {
             }
         });
 
-        // Update missing date columns for records that were not found in src
-        existingKeys.forEach(key => {
-            const existingRecord = this.findRowByKey(key);
-            if (existingRecord && missingDateIndex !== -1) {
-                existingRecord[missingDateIndex] = todayDays;
-            }
-        });
     }
-
-
-
 
 }
