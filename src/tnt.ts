@@ -315,7 +315,7 @@ export class Tnt {
                 colIndexesAlways.forEach((colIndex, i) => {
                     const valueToUpdate = record[src.colNames.indexOf(columnsToUpdate[i])];
                     if ((typeof valueToUpdate === 'string' && valueToUpdate !== "") ||
-                        (typeof valueToUpdate === 'number' && !isNaN(valueToUpdate))) 
+                        (typeof valueToUpdate === 'number' && !isNaN(valueToUpdate)))
                         existingRecord[colIndex] = valueToUpdate;
                 });
 
@@ -335,6 +335,14 @@ export class Tnt {
             }
         });
 
+        // Update missing date columns for records that were not found in src
+        let s = `upsertRowsWithColumns: ${src.rows.length} rows added/updated.`;
+        existingKeys.forEach(key => {
+            const existingRecord = this.findRowByKey(key);
+            if (existingRecord && missingDateIndex !== -1) {
+                existingRecord[missingDateIndex] = todayDays;
+            }
+        });
     }
 
 }
