@@ -7,7 +7,7 @@ function logTntLib(msg: string): void {
 }
 
 /**
- * Convertion functions between linux conventional date (1 = 1ms) and worksheet days date (1 = 1 day) 
+ * Conversion functions between linux conventional date (1 = 1ms) and worksheet days date (1 = 1 day)
  * Javascript Date are stored as UTC timestamp and displayed in local timezone
  * Excel Date are stored in local days (0 = 30/12/1899 00:00 local) and display in local timezone
  * To enforce this behavior, we name JS Date "UTC Date" and Excel Date "Local Days"
@@ -60,19 +60,27 @@ export function roundDaysToMinute(days: number): number {
 }
 
 
-
-// Typed & Named Table
+/**
+ * TNT = Typed & Named Table
+ * Helper class to manipulate data of a work sheet as a basic table
+ *
+ * Does not handle cell with FUNCTIONS. Only handle data cell: number and string.
+ * colFormat is intended to improve this kind of behavior knowing the type of column
+ */
 export class Tnt {
 
     private rows: ColumnType[][] = [];
     private colNames: string[];
+    // For future use could indicate if column is a key, a string, a date, a number, ...
     private colFormat: string[];
-    private keyColName: string;
+    private readonly keyColName: string;
+
+    // key identifying row
     private keyIndex: number = -1;
 
     /**
      * @param columnNames names of columns
-     * @param keyColName key column name, may by a uk or not
+     * @param keyColName key column name, may be a Unique Key or not
      */
     constructor(columnNames: string[], keyColName: string) {
         this.colNames = columnNames;
@@ -81,8 +89,30 @@ export class Tnt {
         this.keyIndex = this.colNames.indexOf(keyColName);
     }
 
+    /**
+     * Create a new row with all the field
+     * @param newRow
+     */
     addRow(newRow: ColumnType[]): void {
         this.rows.push(newRow);
+    }
+
+    /**
+     * Add row duplicating an existing one and changing values
+     * @param newKeyValue new Key of new duplicated line
+     * @param updateColumns columns to update
+     * @param updateValues value to update
+     * @param oldKeyValue key to update from
+     */
+    addRowDuplicate(newKeyValue:ColumnType, updateColumns:string[] , updateValues : ColumnType[], oldKeyValue : ColumnType) : ColumnType[] {
+        let newRow = new ColumnType[this.colNames.length];
+
+        if (oldKeyValue !== undefined)
+            newRow = this.findRowByKey(oldKeyValue);
+
+        newRow[this.keyIndex] = newKeyValue;
+
+        return null;
     }
 
     addValue(keyValue: string, colName: string, value: ColumnType, errorColName: string): void {
@@ -154,8 +184,12 @@ export class Tnt {
 
     }
 
-    // Find a record by key
-    findRowByKey(keyValue: ColumnType): ColumnType[] | null {
+    /**
+     * Find row by key.
+     * @param keyValue either string key value (string) or row number (number)
+     * @return row if found or null if not found
+     */
+    findRowByKey(keyValue: ColumnType ): ColumnType[] | null {
         return this.rows.find(row => row[this.keyIndex] === keyValue) || null;
     }
 
@@ -169,10 +203,18 @@ export class Tnt {
         }
     }
 
-
-    getValues(row: ColumnType[], columns: string[]): ColumnType[] {
+    /**
+     * Return row values filtered by specific columns
+     * @param row row values to filter
+     * @param columns to filter in row (to get values from)
+     */
+    filterRowValue(row: ColumnType[], columns: string[]): ColumnType[] {
         const colIndexes = columns.map(col => this.colNames.indexOf(col));
         return colIndexes.map(index => row[index]);
+    }
+
+    getColumnNames() : String[] {
+        return this.colNames;
     }
 
     getColumnValues(colName: string): ColumnType[] {
@@ -259,7 +301,13 @@ export class Tnt {
         }
     }
 
-    setValues(keyValue: string, columns: string[], values: ColumnType[]): void {
+    /**
+     * Set values for one row on columns
+     * @param keyValue key of row
+     * @param columns columns to set
+     * @param values values to set for columns
+     */
+    setRowValues(keyValue: string, columns: string[], values: ColumnType[]): void {
         const row = this.findRowByKey(keyValue);
         if (row) {
             columns.forEach((colName, index) => {
@@ -296,7 +344,7 @@ export class Tnt {
      * Upsert rows from src into this table.
      * @param src 
      * @param columnsToUpdate columns to update always with src value (if not null or empty)
-     * @param upsertAddDateColumn column indicaying the date of insertion
+     * @param upsertAddDateColumn column indicating the date of insertion
      * @param upsertMissingDateColumn column indicating last time src does not contain info about this row
      */
     upsertRowsWithColumns(src: Tnt, columnsToUpdate: string[], upsertAddDateColumn: string, upsertMissingDateColumn: string): void {
@@ -336,7 +384,7 @@ export class Tnt {
         });
 
         // Update missing date columns for records that were not found in src
-        let s = `upsertRowsWithColumns: ${src.rows.length} rows added/updated.`;
+        // let s = `upsertRowsWithColumns: ${src.rows.length} rows added/updated.`;
         existingKeys.forEach(key => {
             const existingRecord = this.findRowByKey(key);
             if (existingRecord && missingDateIndex !== -1) {

@@ -1,6 +1,6 @@
 import { utcDateToLocalDays, localDaysToUTCDate, localDaysToLocalHoursString, Tnt, roundDaysToMinute } from './tnt.js';
 
-
+// Use Tnt to test on  "issue" (like JIRA) list item
 
 // Date are in UTC because they are stored in UTC, if the data set is defined in another timezone, we need to convert them to UTC
 const transitions = [
@@ -245,7 +245,7 @@ function computeStatusDurationFromJiraStatusTransitionsHistory(sc: Tnt, trans: T
 
 
     sc.getColumnValues("ID").forEach((k) => {
-        sc.setValues(k.toString(), ssCNs, [0, 0, 0, 0, 0, 0, 0]);
+        sc.setRowValues(k.toString(), ssCNs, [0, 0, 0, 0, 0, 0, 0]);
         let scopeTrans: Tnt = trans.filterRowsAndCols(stCNs, k.toString());
         if (scopeTrans.getRowCount() > 0) {
             scopeTrans.orderRowsBy([stDateCN, stIdCN]);
